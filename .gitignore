@@ -1,0 +1,9 @@
+.env
+*.env
+env/
+ENV/
+
+.vscode/
+.idea/
+
+.DS_Store
