@@ -33,11 +33,11 @@ def reset_prometheus_registry():
     This is safe to combine with multiprocess mode: it only touches the default
     in-process REGISTRY, not files in PROMETHEUS_MULTIPROC_DIR.
     """
-    collectors_before: frozenset = frozenset(REGISTRY._collectors)
+    collectors_before: frozenset = frozenset(REGISTRY._collector_to_names.keys())
 
     yield
 
-    new_collectors = REGISTRY._collectors - collectors_before
+    new_collectors = REGISTRY._collector_to_names.keys() - collectors_before
     seen_ids: set[int] = set()
     for collector in list(new_collectors):
         if id(collector) in seen_ids:

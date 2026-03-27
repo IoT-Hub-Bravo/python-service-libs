@@ -15,6 +15,7 @@ base classes — so that each microservice can focus exclusively on its own doma
 - [Versioning and Release Process](#versioning-and-release-process)
 - [Installation](#installation)
 - [Usage Examples](#usage-examples)
+- [Runnable Examples Directory](#runnable-examples-directory)
 - [Running the Library's Own Tests](#running-the-librarys-own-tests)
 - [Test Kit — Fixtures for Downstream Services](#test-kit--fixtures-for-downstream-services)
 
@@ -104,25 +105,25 @@ Install directly from the Git repository using a version tag.
 **Core (no optional framework extras):**
 
 ```bash
-pip install "iot-hub-shared @ git+https://github.com/your-org/iot-hub-shared.git@v0.2.0"
+pip install "iot-hub-shared @ git+https://github.com/IoT-Hub-Bravo/python-service-libs.git@v0.2.0"
 ```
 
 **With Django support** (enables `observability_kit` middleware and metrics view):
 
 ```bash
-pip install "iot-hub-shared[django] @ git+https://github.com/your-org/iot-hub-shared.git@v0.2.0"
+pip install "iot-hub-shared[django] @ git+https://github.com/IoT-Hub-Bravo/python-service-libs.git@v0.2.0"
 ```
 
 **With Celery support** (enables `CeleryPayloadHandler` and Celery logging config):
 
 ```bash
-pip install "iot-hub-shared[celery] @ git+https://github.com/your-org/iot-hub-shared.git@v0.2.0"
+pip install "iot-hub-shared[celery] @ git+https://github.com/IoT-Hub-Bravo/python-service-libs.git@v0.2.0"
 ```
 
 **With both Django and Celery:**
 
 ```bash
-pip install "iot-hub-shared[django,celery] @ git+https://github.com/your-org/iot-hub-shared.git@v0.2.0"
+pip install "iot-hub-shared[django,celery] @ git+https://github.com/IoT-Hub-Bravo/python-service-libs.git@v0.2.0"
 ```
 
 In `pyproject.toml` of a consuming service:
@@ -130,20 +131,20 @@ In `pyproject.toml` of a consuming service:
 ```toml
 [project]
 dependencies = [
-    "iot-hub-shared[django,celery] @ git+https://github.com/your-org/iot-hub-shared.git@v0.2.0",
+    "iot-hub-shared[django,celery] @ git+https://github.com/IoT-Hub-Bravo/python-service-libs.git@v0.2.0",
 ]
 ```
 
 In `requirements.txt`:
 
 ```text
-iot-hub-shared[django,celery] @ git+https://github.com/your-org/iot-hub-shared.git@v0.2.0
+iot-hub-shared[django,celery] @ git+https://github.com/IoT-Hub-Bravo/python-service-libs.git@v0.2.0
 ```
 
 ### Local development — working on this library
 
 ```bash
-git clone https://github.com/your-org/iot-hub-shared.git
+git clone https://github.com/IoT-Hub-Bravo/python-service-libs.git
 cd iot-hub-shared
 pip install -e ".[dev]"
 pytest
@@ -272,6 +273,41 @@ if not s.is_valid():
 
 data = s.validated_data  # {'name': '...', 'type': '...'}
 ```
+
+---
+
+## Runnable Examples Directory
+
+The [`examples/`](examples/) folder contains standalone Python scripts that
+demonstrate each kit end-to-end. They require no web server, no database, and
+no live Kafka broker — every example runs in-process with fakes or stdlib.
+
+| Script | What it demonstrates |
+|---|---|
+| [`examples/demo_audit_and_kafka.py`](examples/demo_audit_and_kafka.py) | Building an `AuditRecord`, serialising it with `to_record()`, publishing via `FakeKafkaProducer`, and simulating broker failures |
+| [`examples/demo_observability.py`](examples/demo_observability.py) | Generating a JSON logging config, setting `request_id`/`request_duration` ContextVars mid-request, and using `CeleryContextFilter` outside a task |
+| [`examples/demo_serializers.py`](examples/demo_serializers.py) | Subclassing `JSONSerializer` with strict/flexible schemas, overriding `_validate_fields` for domain rules, and using `BaseValidator` standalone |
+| [`examples/demo_utils.py`](examples/demo_utils.py) | `normalize_str`, `to_iso8601_utc`, `parse_iso8601_utc`, `normalize_schema`, and `diff_dicts` with annotated output |
+| [`examples/test_demo_fixtures.py`](examples/test_demo_fixtures.py) | pytest plugin fixtures (`fake_kafka_producer`, `audit_record_factory`, `reset_prometheus_registry`) injected automatically — no imports needed |
+
+Install the library first (local dev mode), then run any script directly:
+
+```bash
+pip install -e ".[dev]"
+
+# Plain Python scripts (no pytest required)
+python examples/demo_audit_and_kafka.py
+python examples/demo_observability.py
+python examples/demo_serializers.py
+python examples/demo_utils.py
+
+# pytest plugin demo — must be run with pytest
+pytest -v examples/test_demo_fixtures.py
+```
+
+The plain Python scripts print step-by-step output and exit `0` on success.
+`test_demo_fixtures.py` proves the `pytest11` entry point is working: fixtures
+are injected by name with no import statements in the file itself.
 
 ---
 
