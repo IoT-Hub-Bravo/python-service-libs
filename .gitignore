@@ -1,9 +1,39 @@
+# Environment
 .env
+.env.*
 *.env
 env/
 ENV/
 
+# IDEs
 .vscode/
 .idea/
 
+# macOS
 .DS_Store
+
+# Python bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Test / coverage
+.pytest_cache/
+.hypothesis/
+.coverage
+htmlcov/
+
+# Packaging artifacts
+build/
+dist/
+*.egg-info/
+*.egg
+MANIFEST
+
+# Type checking
+.mypy_cache/
+.pyright/
+
+# Virtual environments
+.venv/
+venv/
