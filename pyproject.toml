@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "iot-hub-shared"
+version = "0.2.0"
+description = "Shared technical libraries for microservices"
+readme = "README.md"
+requires-python = ">=3.10"
+
+dependencies = [
+    "confluent-kafka>=2.3.0",
+    "python-json-logger>=4.0.0",
+    "prometheus_client>=0.24.1",
+    "python-decouple>=3.8",
+]
+
+[project.optional-dependencies]
+django = ["Django>=4.2"]
+celery = ["celery>=5.3"]
+dev = [
+    "pytest>=7.4",
+    "pytest-mock>=3.12",
+    "Django>=4.2",
+    "celery>=5.3",
+]
+
+[project.entry-points."pytest11"]
+iot-hub-shared = "iot_hub_shared.test_kit.conftest"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
