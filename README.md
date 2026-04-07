@@ -15,6 +15,7 @@ base classes — so that each microservice can focus exclusively on its own doma
 - [Versioning and Release Process](#versioning-and-release-process)
 - [Installation](#installation)
 - [Usage Examples](#usage-examples)
+- [auth_kit](#auth_kit)
 - [Runnable Examples Directory](#runnable-examples-directory)
 - [Running the Library's Own Tests](#running-the-librarys-own-tests)
 - [Test Kit — Fixtures for Downstream Services](#test-kit--fixtures-for-downstream-services)
@@ -28,6 +29,7 @@ base classes — so that each microservice can focus exclusively on its own doma
 | `kafka_kit` | `KafkaProducer` and `KafkaConsumer` wrappers around `confluent-kafka` |
 | `observability_kit` | JSON structured logging, Prometheus metrics view, request-context middleware |
 | `audit_kit` | `AuditRecord` Kafka event contract and `publish_audit_event` helper |
+| `auth_kit` | RS256 JWT validation middleware, `login_required`/`role_required` decorators, JWKS caching |
 | `serializer_kit` | Framework-agnostic `BaseSerializer`, `JSONSerializer`, and `BaseValidator` |
 | `utils_kit` | Generic dict, JSON, and datetime normalization utilities |
 | `test_kit` | pytest plugin with `FakeKafkaProducer`, `audit_record_factory`, and Prometheus fixtures |
@@ -272,6 +274,225 @@ if not s.is_valid():
     return JsonResponse(s.errors, status=400)
 
 data = s.validated_data  # {'name': '...', 'type': '...'}
+```
+
+---
+
+## auth_kit
+
+`auth_kit` provides Zero Trust JWT authentication for Django microservices.
+Services validate RS256 tokens locally using the public key fetched from the
+auth-service JWKS endpoint — no synchronous call to auth-service on the hot path.
+
+The public key is cached in-process for a configurable TTL and automatically
+re-fetched on cache expiry or unknown `kid` (transparent key rotation support).
+
+### Installation
+
+Add the `auth_kit` extra to the library pin in your service's `requirements.txt`:
+
+```text
+iot-hub-shared[auth_kit] @ git+https://github.com/IoT-Hub-Bravo/python-service-libs.git@v0.3.0
+```
+
+Or in `pyproject.toml`:
+
+```toml
+[project]
+dependencies = [
+    "iot-hub-shared[auth_kit] @ git+https://github.com/IoT-Hub-Bravo/python-service-libs.git@v0.3.0",
+]
+```
+
+This pulls in `PyJWT>=2.8.0` and `cryptography>=42.0.0` as additional dependencies.
+
+### Configuration
+
+Add the following settings to your service's `settings.py`:
+
+```python
+# Required — the JWKS endpoint exposed by auth-service.
+AUTH_KIT_JWKS_URI = "http://auth-service:8001/api/auth/.well-known/jwks.json"
+
+# Optional — seconds to cache the public key in-process (default: 3600).
+AUTH_KIT_CACHE_TTL = 3600
+```
+
+### Middleware Setup
+
+Add `JWTAuthMiddleware` to `MIDDLEWARE` in your service's `settings.py`.
+It must come **after** Django's `SecurityMiddleware` and **before** any view
+middleware that needs to read `request.user`:
+
+```python
+MIDDLEWARE = [
+    "django.middleware.security.SecurityMiddleware",
+    "iot_hub_shared.auth_kit.middleware.JWTAuthMiddleware",  # <-- add here
+    "django.middleware.common.CommonMiddleware",
+    ...
+]
+```
+
+The middleware runs on every request:
+
+- **Valid Bearer token** → sets `request.user` (`AuthenticatedUser`) and `request.auth_token_payload` (the full decoded JWT dict).
+- **Missing, invalid, or expired token** → sets both to `None`. The request is **not** short-circuited; authorization is the responsibility of the view or its decorators.
+
+### Usage in Views
+
+#### Protecting a view with `@login_required`
+
+Returns `HTTP 401` if no valid token was presented.
+
+```python
+from iot_hub_shared.auth_kit.middleware import login_required
+
+@login_required
+def my_view(request):
+    # request.user is guaranteed to be an AuthenticatedUser here.
+    user_id = request.user.id          # int — JWT "sub" cast to int (matches AutoField/BigAutoField PKs)
+    role    = request.user.role        # str — e.g. "admin" or "client"
+    jti     = request.user.token_jti   # str — unique token ID (for revocation checks)
+    ...
+```
+
+#### Restricting a view to specific roles with `@role_required`
+
+Returns `HTTP 401` if no valid token was presented, `HTTP 403` if the role is not allowed.
+
+```python
+from iot_hub_shared.auth_kit.middleware import role_required
+
+# Single role
+@role_required("admin")
+def admin_only_view(request):
+    ...
+
+# Multiple allowed roles
+@role_required("admin", "operator")
+def privileged_view(request):
+    ...
+```
+
+#### Accessing the full token payload
+
+`request.auth_token_payload` contains the raw decoded JWT dict, useful when you
+need claims beyond `sub` and `role`:
+
+```python
+@login_required
+def my_view(request):
+    payload = request.auth_token_payload
+    issued_at = payload["iat"]
+    expires_at = payload["exp"]
+    ...
+```
+
+#### Manual validation (outside a Django view)
+
+If you need to validate a token outside of the middleware — for example in a
+Celery task, a WebSocket consumer, or a management command — use `JWTValidator`
+directly:
+
+```python
+from iot_hub_shared.auth_kit.validator import JWTValidator
+from iot_hub_shared.auth_kit.exceptions import TokenExpiredError, TokenInvalidError
+
+validator = JWTValidator(
+    jwks_uri="http://auth-service:8001/api/auth/.well-known/jwks.json",
+    cache_ttl=3600,
+)
+
+try:
+    payload = validator.validate(token)
+except TokenExpiredError:
+    # Token was valid but has expired.
+    ...
+except TokenInvalidError:
+    # Token is malformed, signature is invalid, or JWKS could not be fetched.
+    ...
+```
+
+`JWTValidator` is thread-safe and intended to be used as a long-lived singleton.
+
+### Testing
+
+`test_kit.auth` provides helpers for writing JWT-related tests without running
+a real auth-service. Import them explicitly in your service's `conftest.py`
+(they are not auto-registered to avoid requiring optional dependencies in
+services that do not use `auth_kit`):
+
+```python
+# conftest.py
+from iot_hub_shared.test_kit.auth import auth_kit_rsa_key_pair, auth_kit_jwt_factory
+```
+
+| Helper | Type | Description |
+|---|---|---|
+| `make_test_rsa_key_pair()` | function | Generates a throwaway 2048-bit RSA key pair in memory. Returns `(private_pem, public_pem)`. |
+| `make_test_jwt(payload, private_key, *, kid)` | function | Signs a JWT with RS256 using the given PEM private key. |
+| `mock_jwks_server(public_pem, *, kid)` | context manager | Patches `JWTValidator._fetch_jwks` to return a JWKS built from the given public key. No HTTP calls are made. |
+| `auth_kit_rsa_key_pair` | session fixture | Session-scoped key pair — generated once per test run. Returns `(private_pem, public_pem)`. |
+| `auth_kit_jwt_factory` | function fixture | Returns a callable that builds signed JWTs with sane `iat`, `exp`, and `jti` defaults. |
+
+#### Example: testing a view that requires authentication
+
+```python
+from iot_hub_shared.test_kit.auth import (
+    auth_kit_rsa_key_pair,
+    auth_kit_jwt_factory,
+    make_test_jwt,
+    make_test_rsa_key_pair,
+    mock_jwks_server,
+)
+from iot_hub_shared.auth_kit.validator import JWTValidator
+
+
+def test_admin_view_returns_200_for_admin_role(client):
+    private_pem, public_pem = make_test_rsa_key_pair()
+    token = make_test_jwt(
+        {"sub": "user-1", "role": "admin", "jti": "abc"},
+        private_pem,
+    )
+
+    with mock_jwks_server(public_pem):
+        response = client.get(
+            "/api/admin/",
+            HTTP_AUTHORIZATION=f"Bearer {token}",
+        )
+
+    assert response.status_code == 200
+
+
+def test_admin_view_returns_403_for_client_role(client):
+    private_pem, public_pem = make_test_rsa_key_pair()
+    token = make_test_jwt(
+        {"sub": "user-2", "role": "client", "jti": "xyz"},
+        private_pem,
+    )
+
+    with mock_jwks_server(public_pem):
+        response = client.get(
+            "/api/admin/",
+            HTTP_AUTHORIZATION=f"Bearer {token}",
+        )
+
+    assert response.status_code == 403
+```
+
+#### Example: using the pytest fixtures
+
+```python
+# After importing auth_kit_rsa_key_pair and auth_kit_jwt_factory in conftest.py:
+
+def test_something_with_fixture(auth_kit_jwt_factory, auth_kit_rsa_key_pair):
+    _, public_pem = auth_kit_rsa_key_pair
+    token = auth_kit_jwt_factory({"sub": "user-1", "role": "admin"})
+
+    with mock_jwks_server(public_pem):
+        response = client.get("/api/protected/", HTTP_AUTHORIZATION=f"Bearer {token}")
+
+    assert response.status_code == 200
 ```
 
 ---

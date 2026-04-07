@@ -18,6 +18,16 @@ If you prefer an explicit registration, add this to your service's root conftest
 | fake_kafka_producer       | function | FakeKafkaProducer — captures messages in .messages  |
 | audit_record_factory      | function | Factory for AuditRecord instances                   |
 | reset_prometheus_registry | function | Unregisters test-created metrics after each test    |
+
+--- Optional auth_kit fixtures (require PyJWT + cryptography) ---
+
+NOT auto-registered to avoid hard-requiring optional deps.
+Import explicitly in your service's conftest.py:
+
+    from iot_hub_shared.test_kit.auth import auth_kit_rsa_key_pair, auth_kit_jwt_factory
+
+| auth_kit_rsa_key_pair     | session  | Throwaway RSA key pair (private_pem, public_pem)    |
+| auth_kit_jwt_factory      | function | Callable that builds signed JWTs with sane defaults |
 """
 
 from iot_hub_shared.test_kit.audit import audit_record_factory
