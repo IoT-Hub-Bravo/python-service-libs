@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "iot-hub-shared"
-version = "0.2.0"
+version = "0.3.0"
 description = "Shared technical libraries for microservices"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -19,11 +19,17 @@ dependencies = [
 [project.optional-dependencies]
 django = ["Django>=4.2"]
 celery = ["celery>=5.3"]
+auth_kit = [
+    "PyJWT>=2.8.0",
+    "cryptography>=42.0.0",
+]
 dev = [
     "pytest>=7.4",
     "pytest-mock>=3.12",
     "Django>=4.2",
     "celery>=5.3",
+    "PyJWT>=2.8.0",
+    "cryptography>=42.0.0",
 ]
 
 [project.entry-points."pytest11"]
